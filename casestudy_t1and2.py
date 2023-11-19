@@ -88,6 +88,7 @@ class Graph:
             current_cost, current_node = open_set.get()
 
             if current_node == goal:
+                #print(60*gScore[current_node])
                 return gScore[current_node]  # Return the cost to reach the goal
             #print("hi")
             for edge in self.edges.get(current_node, []):
@@ -95,6 +96,8 @@ class Graph:
                 neighbor = edge.end_id
 
                 speed = edge.speeds["weekday_" + str(hour)]
+                #print("SPEED:" + str(speed))
+                #print("DIST: " + str(edge.length))
                 time_to_traverse = edge.length / speed
                 tentative_gScore = gScore[current_node] + time_to_traverse
 
@@ -187,11 +190,12 @@ def main():
 
             # Calculate the time it'll take for the driver to get to the passenger
             d_time_to_pass = pos_to_time(driver.cur_lat, driver.cur_lon, passenger.s_lat, passenger.s_lon, hour)
+            print("DRIVER TO PASSENGER: " + str(d_time_to_pass))
 
             # Calculate the time it'll take for the pair to reach their destination
             ride_time = pos_to_time(passenger.s_lat, passenger.s_lon, passenger.d_lat, passenger.d_lon, hour)
 
-            #print(ride_time)
+            print("RIDE TIME: " + str(ride_time))
             # Increment total driver ride profit
             driver_ride_profit = driver_ride_profit + ride_time - d_time_to_pass
             
@@ -199,9 +203,14 @@ def main():
             passenger_time_total = passenger_time_total + get_passenger_total(passenger.appear_time, cur_time, ride_time)
 
             # Still need to...
-            # 1. Sort out how we get drivers back onto the queue: NAIVE ASSUMPTION -- just throw the driver back on the queue immediately
+            # 1. Sort out how we get drivers back onto the queue
             # 2. Implement A* instead of Dijkstra's
+            # 3. Right now I have HOURS coming out of djikstra's -- need to convert to mins
             # 4. driver.appear_time needs to be cur_time plus d_time_to_pass plus ride_time
+            # (1, 3 and 4 might be done)
+            # 5. Drivers hop offline after some amount of time -- figure out how to do that (random number between 30 mins and 3 hours?)
+            #    This will also improve RT for T2, T3
+            # 6. Implement "sectors" of the graph? (like Q1, Q2... on x,y axis)
 
             #print("CURRENT TIME: " + str(cur_time))
             #print("RIDE_TIME: " + str(ride_time))
@@ -216,6 +225,8 @@ def main():
 
             # Format the new datetime back into a string
             new_driver_str = new_dt.strftime(date_format)
+
+            #print("NEW TIME: " + new_driver_str)
 
             driver.appear_time = new_driver_str
             ud_q.append(driver)
@@ -265,7 +276,7 @@ def pos_to_time(src_lat, src_lon, dst_lat, dst_lon, hour):
     #print(src_node)
     #print(dst_node)
     global graph
-    return graph.dijkstra(src_node, dst_node, hour)
+    return 60*graph.dijkstra(src_node, dst_node, hour)
 
 def get_node(lat, lon):
     # Given a latitude and longitude, find the closest node to those coords
