@@ -6,6 +6,7 @@ import time
 import math
 import heapq
 import random
+import statistics
 from collections import deque
 
 '''
@@ -23,26 +24,29 @@ new passengers, etc. as time progresses
 '''
 
 class Passenger:
-    def __init__(self, appear_time, s_lat, s_lon, d_lat, d_lon):
+    def __init__(self, appear_time, s_lat, s_lon, d_lat, d_lon, quad):
         self.appear_time = appear_time
         self.s_lat = s_lat
         self.s_lon = s_lon
         self.d_lat = d_lat
         self.d_lon = d_lon
+        self.quad = quad
 
 class Driver:
-    def __init__(self, appear_time, cur_lat, cur_lon, avail):
+    def __init__(self, appear_time, cur_lat, cur_lon, avail, quad):
         self.appear_time = appear_time
         self.cur_lat = cur_lat
         self.cur_lon = cur_lon
         self.avail = avail
+        self.quad = quad
 
 
 class Node:
-    def __init__(self, node_id, lat, lon):
+    def __init__(self, node_id, lat, lon, quad):
         self.node_id = node_id
         self.lat = lat
         self.lon = lon
+        self.quad = quad
 
 class Edge:
     def __init__(self, start_id, end_id, length, speeds):
@@ -58,16 +62,33 @@ class Edge:
         return self.__str__()
 
 class Graph:
-    def __init__(self):
+    def __init__(self, median_lon, median_lat):
         self.nodes = {}  # Dictionary: Node ID -> Node Object
         self.edges = {}  # Dictionary: Node ID -> List of Edges
+        self.median_lon = median_lon
+        self.median_lat = median_lat
+
+    def get_quad(self, lon, lat):
+        if lat >= self.median_lat:
+            quadrant = 'N'
+        else:
+            quadrant = 'S'
+
+        if lon >= self.median_lon:
+            quadrant += 'E'
+        else:
+            quadrant += 'W'
+
+        return quadrant
 
     def load_nodes(self, json_file):
         with open(json_file, 'r') as file:
             nodes = json.load(file)
+
         for node_id, coords in nodes.items():
             #print(node_id, coords)
-            self.nodes[node_id] = Node(node_id, float(coords['lat']), float(coords['lon']))
+            quadrant = self.get_quad(coords['lon'], coords['lat'])
+            self.nodes[node_id] = Node(node_id, float(coords['lat']), float(coords['lon']), quadrant)
             self.edges[node_id] = []
 
     def load_edges(self, csv_file):
@@ -177,7 +198,15 @@ class Graph:
 with open("node_data.json", 'r') as file:
     node_data = json.load(file)
 
-graph = Graph()
+# Collect all longitudes and latitudes
+longitudes = [node['lon'] for node in node_data.values()]
+latitudes = [node['lat'] for node in node_data.values()]
+
+# Calculate the median longitude and latitude
+median_lon = statistics.median(longitudes)
+median_lat = statistics.median(latitudes)
+
+graph = Graph(median_lon, median_lat)
 
 graph.load_nodes("node_data.json")
 graph.load_edges("edges.csv")
@@ -185,6 +214,7 @@ graph.load_edges("edges.csv")
 #print(graph.edges)
 
 def main():
+    global graph
     # Load passenger and driver data from CSV
     passengers = read_csv("passengers.csv")
     drivers = read_csv("drivers.csv")
@@ -211,10 +241,10 @@ def main():
         if(p_idx > 1000):
             break
         #print(p_idx, d_idx)
-        # if(p_idx % 100 == 0):
-        #     print("Passenger Queue Size: " + str(p_q.qsize()))
-        #     print("Driver Queue Size: " + str(len(d_q)))
-        #     print("Unavailable Driver Queue Size: " + str(len(ud_q)))
+        #if(p_idx % 100 == 0):
+            #print("Passenger Queue Size: " + str(p_q.qsize()))
+            #print("Driver Queue Size: " + str(len(d_q)))
+            #print("Unavailable Driver Queue Size: " + str(len(ud_q)))
         # print("Passenger Queue Size: " + str(p_q.qsize()))
         # print("Driver Queue Size: " + str(d_q.qsize()))
         # print("Unavailable Driver Queue Size: " + str(len(ud_q)))
@@ -241,13 +271,13 @@ def main():
         if(decide == 0):
             # Add the new passenger into its queue
             appear_time, s_lat, s_lon, d_lat, d_lon = passengers[p_idx]
-            new_passenger = Passenger(appear_time, s_lat, s_lon, d_lat, d_lon)
+            new_passenger = Passenger(appear_time, s_lat, s_lon, d_lat, d_lon, graph.get_quad(float(s_lon), float(s_lat)))
             p_q.put(new_passenger)
             p_idx += 1
         elif(decide == 1):
             # Add the new driver into its queue
             appear_time, cur_lat, cur_lon = drivers[d_idx]
-            new_driver = Driver(appear_time, cur_lat, cur_lon, True)
+            new_driver = Driver(appear_time, cur_lat, cur_lon, True, graph.get_quad(float(cur_lon), float(cur_lat)))
             #d_q.put(new_driver)     # THIS LINE
             d_q.append(new_driver)
             d_idx += 1
@@ -295,8 +325,7 @@ def main():
             dr_len = len(d_q)
             if dr_len > 10:
                 for d in range(dr_len):
-                    euc_dist = math.sqrt( (float(d_q[d].cur_lon) - float(passenger.s_lon))**2 + (float(d_q[d].cur_lat) - float(passenger.s_lat))**2 )
-                    if(euc_dist > .06):
+                    if(d_q[d].quad != passenger.quad):
                         continue
                     cur_time_driver = pos_to_time(float(d_q[d].cur_lat), float(d_q[d].cur_lon), float(passenger.s_lat), float(passenger.s_lon), hour)
                     #print("TIME: " + str(cur_dist_driver))
@@ -317,10 +346,10 @@ def main():
                     if cur_time_driver < min_time_driver:
                         min_time_driver_idx = d
                         min_time_driver = cur_time_driver
-            # if(len(d_q) > 10):
-            #     print()
-            #     print("MIN_TIME: " + str(min_time_driver))
-            #     print()
+            #if(len(d_q) > 10):
+                #print()
+                #print("MIN_TIME: " + str(min_time_driver))
+                #print()
             driver = d_q.pop(min_time_driver_idx)
 
             # print("MIN_DIST: " + str(euc_dist))
@@ -386,6 +415,8 @@ def main():
             driver.appear_time = new_driver_str
             driver.cur_lat = passenger.d_lat
             driver.cur_lon = passenger.d_lon
+            driver.quad = graph.get_quad(float(passenger.d_lon), float(passenger.d_lat))
+            # UPDATE DRIVER QUADRANT
 
             ud_q.append(driver)
             n = 0
@@ -500,7 +531,13 @@ def get_node(lat, lon):
     closest_node = None
     min_distance = float('inf')
 
+    cur_quad = graph.get_quad(float(lon), float(lat))
+
     for node_id, node in graph.nodes.items():
+
+        if(cur_quad != node.quad):
+            continue
+
         #print(node_id)
         distance = euclidean_distance(float(lon), float(lat), node.lon, node.lat)
         #print(distance)
@@ -538,7 +575,7 @@ def read_csv(csv_name):
     return ret
     
 if __name__ == "__main__":
-    print("START T3")
+    print("START T4i")
     start_time = time.time()
     main()
     end_time = time.time()

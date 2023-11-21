@@ -51,6 +51,12 @@ class Edge:
         self.length = length
         self.speeds = speeds  # Dictionary of speeds for each hour
 
+    def __str__(self):
+        return f"Edge(start_id={self.start_id}, end_id={self.end_id}, length={self.length}, speeds={self.speeds})"
+
+    def __repr__(self):
+        return self.__str__()
+
 class Graph:
     def __init__(self):
         self.nodes = {}  # Dictionary: Node ID -> Node Object
@@ -60,48 +66,61 @@ class Graph:
         with open(json_file, 'r') as file:
             nodes = json.load(file)
         for node_id, coords in nodes.items():
-            #print(type(node_id))
             self.nodes[node_id] = Node(node_id, coords['lat'], coords['lon'])
+            self.edges[node_id] = []
 
     def load_edges(self, csv_file):
         with open(csv_file, 'r') as file:
             csv_reader = csv.DictReader(file)
             for row in csv_reader:
-                start_id_str = str(int(row['start_id']))
-                end_id_str = str(int(row['end_id']))
+                start_id_str = row['start_id']
+                end_id_str = row['end_id']
 
                 # Extract the speeds starting from the fourth column
                 speeds = {key: float(value) for key, value in row.items() if key not in ['start_id', 'end_id', 'length']}
                 
                 edge = Edge(start_id_str, end_id_str, float(row['length']), speeds)
-                self.edges.setdefault(start_id_str, []).append(edge)
+                self.edges[start_id_str].append(edge)
             
     def dijkstra(self, start, goal, hour):
         assert(type(start) == str)
         assert(type(goal) == str)
+        
+        if(start == goal):
+            return 0
+
         open_set = PriorityQueue()
         open_set.put((0, start))
 
-        gScore = {node: float('inf') for node in self.nodes}
+        gScore = {str(node): float('inf') for node in self.nodes}
         gScore[start] = 0
 
         while not open_set.empty():
             current_cost, current_node = open_set.get()
-
+            assert(type(current_node) == str)
+            #print("NODE: " + str(current_node))
+            #print("COST: " + str(current_cost))
             if current_node == goal:
-                #print(60*gScore[current_node])
-                return gScore[current_node]  # Return the cost to reach the goal
+                #print("Returning!")
+                return 60*gScore[current_node]  # Return the cost to reach the goal
             #print("hi")
-            for edge in self.edges.get(current_node, []):
-                #print(edge.end_id)
+            #print(f"Edges from node {current_node}: {self.edges.get(current_node)}")
+            for edge in self.edges.get(current_node):
+                #print("NEIGHBOR: " + str(edge.end_id))
                 neighbor = edge.end_id
 
                 speed = edge.speeds["weekday_" + str(hour)]
                 #print("SPEED:" + str(speed))
                 #print("DIST: " + str(edge.length))
+                assert(speed > 0)
+                assert(edge.length > 0)
                 time_to_traverse = edge.length / speed
+                # print("TIME: " + str(time_to_traverse))
+                # print()
                 tentative_gScore = gScore[current_node] + time_to_traverse
-
+                assert(tentative_gScore > 0)
+                #print("REPLACEMENT TIME: " + str(tentative_gScore))
+                #print("CURRENT TIME: " + str(gScore[neighbor]))
                 if tentative_gScore < gScore[neighbor]:
                     gScore[neighbor] = tentative_gScore
                     open_set.put((tentative_gScore, neighbor))
@@ -116,7 +135,13 @@ class Graph:
         lat2, lon2 = self.nodes[node2].lat, self.nodes[node2].lon
         return scale_factor * math.sqrt((lon2 - lon1) ** 2 + (lat2 - lat1) ** 2)
 
-    def a_star(self, start, goal, hour):
+    def a_star(self, start, goal, hour): 
+        assert(type(start) == str)
+        assert(type(goal) == str)
+
+        if(start == goal):
+            return 0
+
         open_set = []
         heapq.heappush(open_set, (0, start))
 
@@ -130,7 +155,8 @@ class Graph:
             current = heapq.heappop(open_set)[1]
 
             if current == goal:
-                return gScore[current]
+                #print("Returning!")
+                return 60*gScore[current]
 
             for edge in self.edges.get(current, []):
                 neighbor = edge.end_id
@@ -145,7 +171,6 @@ class Graph:
 
         return None  # Goal not reachable
 
-# count=0
 with open("node_data.json", 'r') as file:
     node_data = json.load(file)
 
@@ -160,7 +185,7 @@ def main():
     # Load passenger and driver data from CSV
     passengers = read_csv("passengers.csv")
     drivers = read_csv("drivers.csv")
-
+    #print(passengers[0])
     p_idx = 1
     d_idx = 1
 
@@ -180,7 +205,7 @@ def main():
     ud_q = deque()
 
     while(p_idx <= len(passengers) or not p_q.empty()):
-        print(p_idx, d_idx)
+        #print(p_idx, d_idx)
         # print("Passenger Queue Size: " + str(p_q.qsize()))
         # print("Driver Queue Size: " + str(d_q.qsize()))
         # print("Unavailable Driver Queue Size: " + str(len(ud_q)))
@@ -234,6 +259,7 @@ def main():
             cur_time = cur_time_new_dt.strftime(date_format)
 
         # Now, we've grabbed the newest passenger/driver - let's see if we can match a driver passenger pair together
+        #while(not p_q.empty() and not d_q.empty()):
         while(not p_q.empty() and len(d_q) > 0):
             # There is a pair!
             # For now, we just match the driver and passenger who have been waiting the longest together
@@ -250,14 +276,24 @@ def main():
             # T2: Loop over all driver's, pull driver with minimum euclidean distance to passenger #
             # T3: Run Dijkstra's/A* on each driver to find the closest available driver, rather than pulling the longest waiting driver #
             
+            datetime_cur = datetime.strptime(cur_time, "%m/%d/%Y %H:%M:%S")
+            hour = datetime_cur.hour
+
+            
             #Assuming we have d_list (driver list) set up...
             min_dist_driver = float('inf')
             min_dist_driver_idx = 0
+            #print("NEW")
             for d in range(len(d_q)):
-                cur_dist_driver = euclidean_distance(float(passenger.s_lon), float(passenger.s_lat), float(d_q[d].cur_lon), float(d_q[d].cur_lat))
-                if cur_dist_driver < min_dist_driver:
+                #print("working...")
+                euc_dist = math.sqrt((float(d_q[d].cur_lon) - float(passenger.s_lon))**2 + (float(d_q[d].cur_lat) - float(passenger.s_lat))**2)
+                #print("DIST: " + str(euc_dist))
+                #cur_dist_driver = pos_to_time(float(d_q[d].cur_lat), float(d_q[d].cur_lon), float(passenger.s_lat), float(passenger.s_lon), hour)
+                #print("TIME: " + str(cur_dist_driver))
+                #print()
+                if euc_dist < min_dist_driver:
                     min_dist_driver_idx = d
-                    min_dist_driver = cur_dist_driver
+                    min_dist_driver = euc_dist
             driver = d_q.pop(min_dist_driver_idx)
             
             
@@ -265,16 +301,19 @@ def main():
 
             # One more trip done
             trips_completed += 1
-            
-            # Parse the string into a datetime object
-            datetime_cur = datetime.strptime(cur_time, "%m/%d/%Y %H:%M:%S")
-            hour = datetime_cur.hour
-
+        
             # Calculate the time it'll take for the driver to get to the passenger
+
+            # T1/T2 #
             d_time_to_pass = pos_to_time(driver.cur_lat, driver.cur_lon, passenger.s_lat, passenger.s_lon, hour)
+
+            # T3 #
+            #d_time_to_pass = cur_dist_driver
+
             #print("DRIVER TO PASSENGER: " + str(d_time_to_pass))
 
             # Calculate the time it'll take for the pair to reach their destination
+            # REPEATED COMPUTATION: We know the passenger's start node after calculating driver to passenger time
             ride_time = pos_to_time(passenger.s_lat, passenger.s_lon, passenger.d_lat, passenger.d_lon, hour)
 
             #print("RIDE TIME: " + str(ride_time))
@@ -285,12 +324,12 @@ def main():
             passenger_time_total = passenger_time_total + get_passenger_total(passenger.appear_time, cur_time, ride_time)
 
             # Still need to...
-            # 1. Get rid of pandas implementation for (just look up pd and change it to using csv module)
-            # 5. Drivers hop offline after some amount of time -- figure out how to do that (random number between 30 mins and 3 hours? probability?)
-            #    This will also improve RT for T2, T3
-            # 6. Implement "sectors" of the graph? (like Q1, Q2... on x,y axis) ( we can use this for T4(i) )
-            # 7. Change a_star/dijkstra's to return the value in minutes, rather than returning the hour value and having pos_to_time return hr*60
-            #    (This will be for T3)
+            # 1. Implement "sectors" of the graph? (like Q1, Q2... on x,y axis) ( we can use this for T4(i) )
+            #    a) We'll have to update the load_nodes function that's part of the Graph class
+            #    b) We'll also have to update the get_node function to only look at nodes in the correct sector
+            #    c) There might be some leakage if someone is close to the edge of the quadrants -- i.e. the closest node might
+            #       be in Q3 when the longitude latitude given is in Q2, but that shouldn't happen often so this should work
+            #    d) We'll have to update the node class to have a sector field as part of init
 
             #print("CURRENT TIME: " + str(cur_time))
             #print("RIDE_TIME: " + str(ride_time))
@@ -311,9 +350,7 @@ def main():
             driver.appear_time = new_driver_str
             driver.cur_lat = passenger.d_lat
             driver.cur_lon = passenger.d_lon
-            # NEED TO update driver.avail so that it's not just automatically thrown back onto the available drivers stack
-            # FIRST, test to see if we even need driver.avail -- the ud_q might be working fine atm, might not even need a .avail field for Driver class
-            # if it's all good, get rid of .avail; if not, just set .avail=False before ud_q.append and ready_driver.avail=True before d_q.put(ready_driver)
+
             ud_q.append(driver)
             n = 0
             while(n < len(ud_q)):
@@ -333,6 +370,7 @@ def main():
                     #print("Random Number: " + str(random_number))
                     if random_number < 0.92:
                         d_q.append(ready_driver)
+                        #d_q.put(ready_driver)
                     n += 1
                 else:
                     break
@@ -349,6 +387,7 @@ def main():
                 if(compare_time(ud_q[n].appear_time, cur_time) == 0):
                     ready_driver = ud_q.popleft()    
                     d_q.append(ready_driver)
+                    #d_q.put(ready_driver)
                     n += 1
                 else:
                     break
@@ -389,19 +428,23 @@ def pos_to_time(src_lat, src_lon, dst_lat, dst_lon, hour):
     #print(dst_node)
     #print(src_node)
     #print(dst_node)
+    #assert(src_node != dst_node)
+    if(src_node == dst_node):
+        return 0
+
     global graph
-    return 60*graph.a_star(src_node, dst_node, hour)
+    return graph.a_star(src_node, dst_node, hour)
 
 def get_node(lat, lon):
-    # Given a latitude and longitude, find the closest node to those coords
-    # Maybe we implement a binary search of sorts: sort the node_data (by lat? lon?) so that we get O(log(N)) RT, not O(N) RT
-    max_distance = .0015
+    # # Given a latitude and longitude, find the closest node to those coords
+    # # Maybe we implement a binary search of sorts: sort the node_data (by lat? lon?) so that we get O(log(N)) RT, not O(N) RT
+    # max_distance = .0015
     
-    for node, coords in node_data.items():
-        distance = euclidean_distance(float(lon), float(lat), coords['lon'], coords['lat'])
-        if distance < max_distance:
-            return node, distance
-    #print(count)
+    # for node, coords in node_data.items():
+    #     distance = euclidean_distance(float(lon), float(lat), coords['lon'], coords['lat'])
+    #     if distance < max_distance:
+    #         return str(node), distance
+    # #print(count)
 
     closest_node = None
     min_distance = float('inf')
@@ -412,7 +455,7 @@ def get_node(lat, lon):
             min_distance = distance
             closest_node = node
     #print("MINIMUM: " + str(min_distance))
-    return closest_node, min_distance
+    return str(closest_node), min_distance
 
 # MAYBE: getting rid of the euclidean_distance fn overhead might save lots of time -- test it once we've gotten through more stuff
 # MEANING: instead of "distance = euclidean_distance(...)" just write "distance = math.sqrt(...)"
@@ -442,7 +485,7 @@ def read_csv(csv_name):
     return ret
     
 if __name__ == "__main__":
-    print("START")
+    print("START T2")
     start_time = time.time()
     main()
     end_time = time.time()

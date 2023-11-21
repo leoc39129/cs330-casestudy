@@ -66,8 +66,7 @@ class Graph:
         with open(json_file, 'r') as file:
             nodes = json.load(file)
         for node_id, coords in nodes.items():
-            #print(node_id, coords)
-            self.nodes[node_id] = Node(node_id, float(coords['lat']), float(coords['lon']))
+            self.nodes[node_id] = Node(node_id, coords['lat'], coords['lon'])
             self.edges[node_id] = []
 
     def load_edges(self, csv_file):
@@ -159,11 +158,9 @@ class Graph:
                 #print("Returning!")
                 return 60*gScore[current]
 
-            for edge in self.edges.get(current):
+            for edge in self.edges.get(current, []):
                 neighbor = edge.end_id
                 speed = edge.speeds["weekday_" + str(hour)]
-                assert(speed > 0)
-                assert(edge.length > 0)
                 time_to_traverse = edge.length / speed
                 tentative_gScore = gScore[current] + time_to_traverse
 
@@ -208,13 +205,7 @@ def main():
     ud_q = deque()
 
     while(p_idx <= len(passengers) or not p_q.empty()):
-        if(p_idx > 1000):
-            break
         #print(p_idx, d_idx)
-        # if(p_idx % 100 == 0):
-        #     print("Passenger Queue Size: " + str(p_q.qsize()))
-        #     print("Driver Queue Size: " + str(len(d_q)))
-        #     print("Unavailable Driver Queue Size: " + str(len(ud_q)))
         # print("Passenger Queue Size: " + str(p_q.qsize()))
         # print("Driver Queue Size: " + str(d_q.qsize()))
         # print("Unavailable Driver Queue Size: " + str(len(ud_q)))
@@ -288,48 +279,22 @@ def main():
             datetime_cur = datetime.strptime(cur_time, "%m/%d/%Y %H:%M:%S")
             hour = datetime_cur.hour
 
+            
             #Assuming we have d_list (driver list) set up...
-            min_time_driver = 25
-            min_time_driver_idx = 0
+            min_dist_driver = float('inf')
+            min_dist_driver_idx = 0
             #print("NEW")
-            dr_len = len(d_q)
-            if dr_len > 10:
-                for d in range(dr_len):
-                    euc_dist = math.sqrt( (float(d_q[d].cur_lon) - float(passenger.s_lon))**2 + (float(d_q[d].cur_lat) - float(passenger.s_lat))**2 )
-                    if(euc_dist > .06):
-                        continue
-                    cur_time_driver = pos_to_time(float(d_q[d].cur_lat), float(d_q[d].cur_lon), float(passenger.s_lat), float(passenger.s_lon), hour)
-                    #print("TIME: " + str(cur_dist_driver))
-                    #print()
-                    if cur_time_driver < min_time_driver:
-                        min_time_driver_idx = d
-                        min_time_driver = cur_time_driver
-            else:
-                for d in range(dr_len):
-                    #print("working...")
-                    #print(float(d_q[d].cur_lon), float(d_q[d].cur_lat), float(passenger.s_lon), float(passenger.s_lat))
-                    
-                    #print("DIST: " + str(euc_dist))
-                    
-                    cur_time_driver = pos_to_time(float(d_q[d].cur_lat), float(d_q[d].cur_lon), float(passenger.s_lat), float(passenger.s_lon), hour)
-                    #print("TIME: " + str(cur_dist_driver))
-                    #print()
-                    if cur_time_driver < min_time_driver:
-                        min_time_driver_idx = d
-                        min_time_driver = cur_time_driver
-            # if(len(d_q) > 10):
-            #     print()
-            #     print("MIN_TIME: " + str(min_time_driver))
-            #     print()
-            driver = d_q.pop(min_time_driver_idx)
-
-            # print("MIN_DIST: " + str(euc_dist))
-            # print("MIN_TIME: " + str(cur_dist_driver))
-
-            # print("DRIVER_LON: " + str(driver.cur_lon))
-            # print("DRIVER_LAT: " + str(driver.cur_lat))
-            # print("PASS_LON: " + str(passenger.s_lon))
-            # print("PASS_LAT: " + str(passenger.s_lat))
+            for d in range(len(d_q)):
+                #print("working...")
+                euc_dist = math.sqrt((float(d_q[d].cur_lon) - float(passenger.s_lon))**2 + (float(d_q[d].cur_lat) - float(passenger.s_lat))**2)
+                #print("DIST: " + str(euc_dist))
+                #cur_dist_driver = pos_to_time(float(d_q[d].cur_lat), float(d_q[d].cur_lon), float(passenger.s_lat), float(passenger.s_lon), hour)
+                #print("TIME: " + str(cur_dist_driver))
+                #print()
+                if euc_dist < min_dist_driver:
+                    min_dist_driver_idx = d
+                    min_dist_driver = euc_dist
+            driver = d_q.pop(min_dist_driver_idx)
             
             
             #driver = d_q.get()
@@ -340,19 +305,18 @@ def main():
             # Calculate the time it'll take for the driver to get to the passenger
 
             # T1/T2 #
-            #d_time_to_pass = pos_to_time(driver.cur_lat, driver.cur_lon, passenger.s_lat, passenger.s_lon, hour)
+            d_time_to_pass = pos_to_time(driver.cur_lat, driver.cur_lon, passenger.s_lat, passenger.s_lon, hour)
 
             # T3 #
-            d_time_to_pass = min_time_driver
+            #d_time_to_pass = cur_dist_driver
 
             #print("DRIVER TO PASSENGER: " + str(d_time_to_pass))
 
             # Calculate the time it'll take for the pair to reach their destination
             # REPEATED COMPUTATION: We know the passenger's start node after calculating driver to passenger time
-            #print("RIDE TIME:")
             ride_time = pos_to_time(passenger.s_lat, passenger.s_lon, passenger.d_lat, passenger.d_lon, hour)
+
             #print("RIDE TIME: " + str(ride_time))
-            #print()
             # Increment total driver ride profit
             driver_ride_profit = driver_ride_profit + ride_time - d_time_to_pass
             
@@ -466,48 +430,31 @@ def pos_to_time(src_lat, src_lon, dst_lat, dst_lon, hour):
     #print(dst_node)
     #assert(src_node != dst_node)
     if(src_node == dst_node):
-        #print("###### SAME NODES! ########")
         return 0
 
     global graph
-    return graph.a_star(src_node, dst_node, hour)
-
-# def get_node(lat, lon):
-#     # # Given a latitude and longitude, find the closest node to those coords
-#     # # Maybe we implement a binary search of sorts: sort the node_data (by lat? lon?) so that we get O(log(N)) RT, not O(N) RT
-#     # max_distance = .0015
-    
-#     # for node, coords in node_data.items():
-#     #     distance = euclidean_distance(float(lon), float(lat), coords['lon'], coords['lat'])
-#     #     if distance < max_distance:
-#     #         return str(node), distance
-#     # #print(count)
-
-#     closest_node = None
-#     min_distance = float('inf')
-
-#     for node, coords in node_data.items():
-#         distance = euclidean_distance(float(lon), float(lat), coords['lon'], coords['lat'])
-#         if distance < min_distance:
-#             min_distance = distance
-#             closest_node = node
-#     #print("MINIMUM: " + str(min_distance))
-#     return str(closest_node), min_distance
+    return graph.dijkstra(src_node, dst_node, hour)
 
 def get_node(lat, lon):
-    global graph
+    # # Given a latitude and longitude, find the closest node to those coords
+    # # Maybe we implement a binary search of sorts: sort the node_data (by lat? lon?) so that we get O(log(N)) RT, not O(N) RT
+    # max_distance = .0015
+    
+    # for node, coords in node_data.items():
+    #     distance = euclidean_distance(float(lon), float(lat), coords['lon'], coords['lat'])
+    #     if distance < max_distance:
+    #         return str(node), distance
+    # #print(count)
 
     closest_node = None
     min_distance = float('inf')
 
-    for node_id, node in graph.nodes.items():
-        #print(node_id)
-        distance = euclidean_distance(float(lon), float(lat), node.lon, node.lat)
-        #print(distance)
+    for node, coords in node_data.items():
+        distance = euclidean_distance(float(lon), float(lat), coords['lon'], coords['lat'])
         if distance < min_distance:
             min_distance = distance
-            closest_node = node_id
-    #print(f"FINAL: ID({closest_node}), DIST({min_distance})")
+            closest_node = node
+    #print("MINIMUM: " + str(min_distance))
     return str(closest_node), min_distance
 
 # MAYBE: getting rid of the euclidean_distance fn overhead might save lots of time -- test it once we've gotten through more stuff
@@ -538,7 +485,7 @@ def read_csv(csv_name):
     return ret
     
 if __name__ == "__main__":
-    print("START T3")
+    print("START T4(ii): Dijkstra's")
     start_time = time.time()
     main()
     end_time = time.time()
