@@ -174,6 +174,33 @@ class Graph:
 
         return None  # Goal not reachable
 
+    def random_walk(self, start, dist, hour):
+        assert(type(start) == str)
+        
+        current_node = start
+        total_distance = 0.0
+        total_time = 0.0
+
+        while total_distance < dist:
+            # Get the edges from the current node
+            edges = self.edges.get(current_node)
+            if not edges:
+                break  # No more edges to follow, break the loop
+
+            # Randomly select an edge
+            edge = random.choice(edges)
+            speed = edge.speeds["weekday_" + str(hour)]
+            time_to_traverse = edge.length / speed
+
+            # Update the total distance and time
+            total_distance += edge.length
+            total_time += time_to_traverse
+
+            # Move to the next node
+            current_node = edge.end_id
+
+        return 60 * total_time
+
 with open("node_data.json", 'r') as file:
     node_data = json.load(file)
 
@@ -208,9 +235,7 @@ def main():
     ud_q = deque()
 
     while(p_idx <= len(passengers) or not p_q.empty()):
-        if(p_idx > 1000):
-            break
-        #print(p_idx, d_idx)
+        # print(p_idx, d_idx)
         # if(p_idx % 100 == 0):
         #     print("Passenger Queue Size: " + str(p_q.qsize()))
         #     print("Driver Queue Size: " + str(len(d_q)))
@@ -298,7 +323,8 @@ def main():
                     euc_dist = math.sqrt( (float(d_q[d].cur_lon) - float(passenger.s_lon))**2 + (float(d_q[d].cur_lat) - float(passenger.s_lat))**2 )
                     if(euc_dist > .06):
                         continue
-                    cur_time_driver = pos_to_time(float(d_q[d].cur_lat), float(d_q[d].cur_lon), float(passenger.s_lat), float(passenger.s_lon), hour)
+                    driv_node, useless = get_node(float(d_q[d].cur_lat), float(d_q[d].cur_lon))
+                    cur_time_driver = graph.random_walk(driv_node, euc_dist, hour)
                     #print("TIME: " + str(cur_dist_driver))
                     #print()
                     if cur_time_driver < min_time_driver:
@@ -310,8 +336,10 @@ def main():
                     #print(float(d_q[d].cur_lon), float(d_q[d].cur_lat), float(passenger.s_lon), float(passenger.s_lat))
                     
                     #print("DIST: " + str(euc_dist))
-                    
-                    cur_time_driver = pos_to_time(float(d_q[d].cur_lat), float(d_q[d].cur_lon), float(passenger.s_lat), float(passenger.s_lon), hour)
+                    euc_dist = math.sqrt( (float(d_q[d].cur_lon) - float(passenger.s_lon))**2 + (float(d_q[d].cur_lat) - float(passenger.s_lat))**2 )
+
+                    driv_node, useless = get_node(float(d_q[d].cur_lat), float(d_q[d].cur_lon))
+                    cur_time_driver = graph.random_walk(driv_node, euc_dist, hour)
                     #print("TIME: " + str(cur_dist_driver))
                     #print()
                     if cur_time_driver < min_time_driver:
